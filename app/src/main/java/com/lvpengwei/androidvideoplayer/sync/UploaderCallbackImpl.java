@@ -1,7 +1,5 @@
 package com.lvpengwei.androidvideoplayer.sync;
 
-import android.opengl.EGLContext;
-
 import com.lvpengwei.androidvideoplayer.opengl.media.render.EglCore;
 import com.lvpengwei.androidvideoplayer.opengl.media.texture.uploader.TextureFrameUploader;
 
