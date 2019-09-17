@@ -1,6 +1,7 @@
 package com.lvpengwei.androidvideoplayer.decoder;
 
 import android.annotation.TargetApi;
+import android.content.res.AssetFileDescriptor;
 import android.graphics.SurfaceTexture;
 import android.media.MediaCodec;
 import android.media.MediaExtractor;
@@ -47,7 +48,7 @@ public class MediaCodecVideoDecoder implements SurfaceTexture.OnFrameAvailableLi
         m_bufferInfo = new MediaCodec.BufferInfo();
     }
 
-    public boolean OpenFile(String videoFilePath, int texId) {
+    public boolean OpenFile(AssetFileDescriptor afd, int texId) {
         if (IsValid()) {
             Log.e(TAG, "You can't call OpenFile() twice!");
             return false;
@@ -56,7 +57,7 @@ public class MediaCodecVideoDecoder implements SurfaceTexture.OnFrameAvailableLi
         // Create media extractor and set data source
         try {
             m_extractor = new MediaExtractor();
-            m_extractor.setDataSource(videoFilePath);
+            m_extractor.setDataSource(afd.getFileDescriptor(), afd.getStartOffset(), afd.getLength());
             m_extractorInOriginalState = true;
         } catch (Exception e) {
             Log.e(TAG, "" + e.getMessage());
@@ -80,7 +81,7 @@ public class MediaCodecVideoDecoder implements SurfaceTexture.OnFrameAvailableLi
         }
 
         if (m_videoTrackIndex < 0) {
-            Log.e(TAG, "Failed to find a video track from " + videoFilePath);
+//            Log.e(TAG, "Failed to find a video track from " + videoFilePath);
             CloseFile();
             return false;
         }

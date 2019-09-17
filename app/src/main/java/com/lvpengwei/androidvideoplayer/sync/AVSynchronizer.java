@@ -95,7 +95,8 @@ public class AVSynchronizer {
 
     public void OnInitFromUploaderGLContext(EglCore eglCore, int videoFrameWidth, int videoFrameHeight) {
         if (null == passThorughRender) {
-            passThorughRender = new VideoGLSurfaceRender(videoFrameWidth, videoFrameHeight);
+            passThorughRender = new VideoGLSurfaceRender();
+            passThorughRender.init(videoFrameWidth, videoFrameHeight);
         }
         initCircleQueue(videoFrameWidth, videoFrameHeight);
         eglCore.doneCurrent();

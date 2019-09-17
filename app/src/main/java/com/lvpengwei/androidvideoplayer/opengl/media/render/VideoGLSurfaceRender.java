@@ -36,27 +36,24 @@ public class VideoGLSurfaceRender {
     private int mGLTextureCoords;
     private int mGLUniformTexture;
 
-    public VideoGLSurfaceRender(int width, int height) {
+    public boolean init(int width, int height) {
         _backingLeft = 0;
         _backingTop = 0;
-        _backingWidth = 0;
-        _backingHeight = 0;
+        _backingWidth = width;
+        _backingHeight = height;
         mGLProgId = GLTools.loadProgram(OUTPUT_VIEW_VERTEX_SHADER, OUTPUT_VIEW_FRAG_SHADER);
         if (mGLProgId == 0) {
             Log.d(TAG, "Could not create program.");
-            return;
+            return false;
         }
         mGLVertexCoords = GLES20.glGetAttribLocation(mGLProgId, "position");
-        checkEglError("glGetAttribLocation vPosition");
+        GLTools.checkEglError("glGetAttribLocation vPosition");
         mGLTextureCoords = GLES20.glGetAttribLocation(mGLProgId, "texcoord");
-        checkEglError("glGetAttribLocation vTexCords");
+        GLTools.checkEglError("glGetAttribLocation vTexCords");
         mGLUniformTexture = GLES20.glGetAttribLocation(mGLProgId, "yuvTexSampler");
-        checkEglError("glGetAttribLocation yuvTexSampler");
+        GLTools.checkEglError("glGetAttribLocation yuvTexSampler");
         mIsInitialized = true;
-    }
-
-    public static boolean checkEglError(String msg) {
-        return GLTools.checkEglError(msg);
+        return true;
     }
 
     public void dealloc() {

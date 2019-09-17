@@ -61,11 +61,11 @@ public class TextureFrameUploader {
     /**
      * videoEffectProcessor相关的
      **/
-    int outputTexId;
+    private int outputTexId;
     /**
      * 操作纹理的FBO
      **/
-    int mFBO;
+    private int mFBO;
     /**
      * 解码线程
      * 拷贝以及处理线程
@@ -123,6 +123,7 @@ public class TextureFrameUploader {
                 renderLoop();
             }
         });
+        mThread.start();
         return true;
     }
 
@@ -140,7 +141,6 @@ public class TextureFrameUploader {
         _msg = RenderThreadMessage.MSG_RENDER_LOOP_EXIT;
         mCondition.signal();
         mLock.unlock();
-//        pthread_join(_threadId, 0);
     }
 
     public void registerUpdateTexImageCallback(UpdateTexImageCallback updateTexImageCallback, SignalDecodeThreadCallback signalDecodeThreadCallback, Object context) {
@@ -241,10 +241,11 @@ public class TextureFrameUploader {
                 .put(textureCoords);
         texCoordsBuffer.position(0);
         textureFrameCopier.renderWithCoords(textureFrame, outputTexId, vertexBuffer, texCoordsBuffer);
-        if (mUploaderCallback != null)
+        if (mUploaderCallback != null) {
             mUploaderCallback.processVideoFrame(outputTexId, videoWidth, videoHeight, position);
-        else
+        } else {
             Log.e(TAG, "TextureFrameUploader::mUploaderCallback is NULL");
+        }
 
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0);
     }

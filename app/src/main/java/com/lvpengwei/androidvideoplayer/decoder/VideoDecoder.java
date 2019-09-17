@@ -74,7 +74,7 @@ public class VideoDecoder {
 
     private void initializeMediaCodec() {
         decodeTexId = ((GPUTextureFrameUploader) textureFrameUploader).getDecodeTexId();
-        videoDecoder.OpenFile(requestHeader.getUri(), decodeTexId);
+//        videoDecoder.OpenFile(requestHeader.getUri(), decodeTexId);
     }
 
     private TextureFrameUploader createTextureFrameUploader() {

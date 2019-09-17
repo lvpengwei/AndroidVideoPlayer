@@ -1,12 +1,12 @@
 package com.lvpengwei.androidvideoplayer.opengl.media.render;
 
+import android.graphics.SurfaceTexture;
 import android.opengl.EGL14;
 import android.opengl.EGLConfig;
 import android.opengl.EGLContext;
 import android.opengl.EGLDisplay;
 import android.opengl.EGLExt;
 import android.opengl.EGLSurface;
-import android.opengl.GLES20;
 import android.util.Log;
 import android.view.Surface;
 
@@ -63,26 +63,6 @@ public class EglCore {
         }
     }
 
-    public static int createTexture(int type) {
-        int[] textures = new int[1];
-        GLES20.glGenTextures(1, textures, 0);
-
-        int textureId = textures[0];
-        GLES20.glBindTexture(type, textureId);
-        GLTools.checkEglError("glBindTexture mTextureID");
-
-        GLES20.glTexParameterf(type, GLES20.GL_TEXTURE_MIN_FILTER,
-                GLES20.GL_LINEAR);
-        GLES20.glTexParameterf(type, GLES20.GL_TEXTURE_MAG_FILTER,
-                GLES20.GL_LINEAR);
-        GLES20.glTexParameteri(type, GLES20.GL_TEXTURE_WRAP_S,
-                GLES20.GL_CLAMP_TO_EDGE);
-        GLES20.glTexParameteri(type, GLES20.GL_TEXTURE_WRAP_T,
-                GLES20.GL_CLAMP_TO_EDGE);
-        GLTools.checkEglError("glTexParameter");
-        return textureId;
-    }
-
     public void setPresentationTime(EGLSurface eglSurface, long usecs) {
         if (surface != null) {
             EGLExt.eglPresentationTimeANDROID(eglDisplay, eglSurface, usecs * 1000);
@@ -126,7 +106,10 @@ public class EglCore {
         return EGL14.eglSwapBuffers(eglDisplay, eglSurface);
     }
 
-    public EGLSurface createWindowSurface(Surface surface) {
+    public EGLSurface createWindowSurface(Object surface) {
+        if (!(surface instanceof Surface) && !(surface instanceof SurfaceTexture)) {
+            throw new RuntimeException("invalid surface: " + surface);
+        }
         int[] surfaceAttribs = {EGL14.EGL_NONE};
         EGLSurface eglSurface = EGL14.eglCreateWindowSurface(eglDisplay, configs[0], surface, surfaceAttribs, 0);
         if (eglSurface == null) {

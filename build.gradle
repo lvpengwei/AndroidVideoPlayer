@@ -2,6 +2,9 @@
 
 buildscript {
     repositories {
+        maven {
+            url "http://maven.oa.com/nexus/service/local/repositories/thirdparty/content/"
+        }
         google()
         jcenter()
         
@@ -16,6 +19,9 @@ buildscript {
 
 allprojects {
     repositories {
+        maven {
+            url "http://maven.oa.com/nexus/service/local/repositories/thirdparty/content/"
+        }
         google()
         jcenter()
         

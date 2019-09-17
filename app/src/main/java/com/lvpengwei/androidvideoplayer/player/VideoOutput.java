@@ -60,7 +60,8 @@ public class VideoOutput {
         renderTexSurface = eglCore.createWindowSurface(surface);
         if (renderTexSurface == null) return;
         eglCore.makeCurrent(renderTexSurface);
-        render = new VideoGLSurfaceRender(screenWidth, screenHeight);
+        render = new VideoGLSurfaceRender();
+        render.init(screenWidth, screenHeight);
         eglCore.doneCurrent();
         surfaceExists = true;
         forceGetFrame = true;
