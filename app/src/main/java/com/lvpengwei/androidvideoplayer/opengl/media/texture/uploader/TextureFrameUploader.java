@@ -198,6 +198,7 @@ public class TextureFrameUploader {
 
     public boolean initialize() {
         eglCore = new EglCore();
+        eglCore.initWithShareContext();
 
         copyTexSurface = eglCore.createOffscreenSurface(videoWidth, videoHeight);
         eglCore.makeCurrent(copyTexSurface);

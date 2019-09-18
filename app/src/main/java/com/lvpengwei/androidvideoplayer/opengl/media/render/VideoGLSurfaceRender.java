@@ -3,6 +3,8 @@ package com.lvpengwei.androidvideoplayer.opengl.media.render;
 import android.opengl.GLES20;
 import android.util.Log;
 
+import com.lvpengwei.androidvideoplayer.player.common.FrameTexture;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
@@ -20,7 +22,7 @@ public class VideoGLSurfaceRender {
             "   v_texcoord = texcoord;  \n" +
             "}                            \n";
     private static String OUTPUT_VIEW_FRAG_SHADER = "" +
-            "varying highp vec2 v_texcoord;\n" +
+            "varying vec2 v_texcoord;\n" +
             "uniform sampler2D yuvTexSampler;\n" +
             "void main() {\n" +
             "  gl_FragColor = texture2D(yuvTexSampler, v_texcoord);\n" +
@@ -50,7 +52,7 @@ public class VideoGLSurfaceRender {
         GLTools.checkEglError("glGetAttribLocation vPosition");
         mGLTextureCoords = GLES20.glGetAttribLocation(mGLProgId, "texcoord");
         GLTools.checkEglError("glGetAttribLocation vTexCords");
-        mGLUniformTexture = GLES20.glGetAttribLocation(mGLProgId, "yuvTexSampler");
+        mGLUniformTexture = GLES20.glGetUniformLocation(mGLProgId, "yuvTexSampler");
         GLTools.checkEglError("glGetAttribLocation yuvTexSampler");
         mIsInitialized = true;
         return true;
@@ -59,6 +61,13 @@ public class VideoGLSurfaceRender {
     public void dealloc() {
         mIsInitialized = false;
         GLES20.glDeleteProgram(mGLProgId);
+    }
+
+    public void resetRenderSize(int left, int top, int width, int height) {
+        this._backingLeft = left;
+        this._backingTop = top;
+        this._backingWidth = width;
+        this._backingHeight = height;
     }
 
     public void renderToView(int texID, int width, int height) {
@@ -167,15 +176,16 @@ public class VideoGLSurfaceRender {
         renderToView(texID, texWidth, texHeight, ScaleType.ASPECT_FIT);
     }
 
-    public void renderToTexture(int inputTexId, int outputTexId) {
-        GLES20.glViewport(_backingLeft, _backingTop, _backingWidth, _backingHeight);
+    public void renderToTexture(int inputTexId, FrameTexture texture) {
+//        GLES20.glViewport(_backingLeft, _backingTop, _backingWidth, _backingHeight);
+        GLES20.glViewport(_backingLeft, _backingTop, 1920, 1080);
 
         if (!mIsInitialized) {
             Log.e(TAG, "ViewRenderEffect::renderEffect effect not initialized!");
             return;
         }
 
-        GLES20.glFramebufferTexture2D(GLES20.GL_FRAMEBUFFER, GLES20.GL_COLOR_ATTACHMENT0, GLES20.GL_TEXTURE_2D, outputTexId, 0);
+        GLES20.glFramebufferTexture2D(GLES20.GL_FRAMEBUFFER, GLES20.GL_COLOR_ATTACHMENT0, GLES20.GL_TEXTURE_2D, texture.texId, 0);
         GLTools.checkEglError("PassThroughRender::renderEffect glFramebufferTexture2D");
         int status = GLES20.glCheckFramebufferStatus(GLES20.GL_FRAMEBUFFER);
         if (status != GLES20.GL_FRAMEBUFFER_COMPLETE) {

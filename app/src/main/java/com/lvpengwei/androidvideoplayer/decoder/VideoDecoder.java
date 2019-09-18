@@ -44,7 +44,7 @@ public class VideoDecoder {
         audioDecoder = new MediaCodecAudioDecoder();
         isVideoOutputEOF = false;
         isAudioOutputEOF = false;
-        audioDecoder.OpenFile(requestHeader.getUri());
+//        audioDecoder.OpenFile(requestHeader.getUri());
     }
 
     public void decode() {

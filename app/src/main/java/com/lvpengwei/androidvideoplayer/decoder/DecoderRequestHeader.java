@@ -1,9 +1,12 @@
 package com.lvpengwei.androidvideoplayer.decoder;
 
+import android.content.res.AssetFileDescriptor;
+
 import java.util.HashMap;
 import java.util.Map;
 
 public class DecoderRequestHeader {
+    public AssetFileDescriptor fd;
     private String uri;
     private int maxAnalyzeDurations;
     private int analyzeCnt;
@@ -13,6 +16,9 @@ public class DecoderRequestHeader {
 
     public String getUri() {
         return uri;
+    }
+
+    public DecoderRequestHeader() {
     }
 
     public DecoderRequestHeader(String uriParam) {

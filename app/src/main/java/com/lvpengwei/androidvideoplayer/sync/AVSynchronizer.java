@@ -3,8 +3,9 @@ package com.lvpengwei.androidvideoplayer.sync;
 import android.opengl.EGLContext;
 import android.util.Log;
 
+import com.lvpengwei.androidvideoplayer.decoder.AudioReader;
 import com.lvpengwei.androidvideoplayer.decoder.DecoderRequestHeader;
-import com.lvpengwei.androidvideoplayer.decoder.VideoDecoder;
+import com.lvpengwei.androidvideoplayer.decoder.VideoReader;
 import com.lvpengwei.androidvideoplayer.opengl.media.AudioFrame;
 import com.lvpengwei.androidvideoplayer.opengl.media.MovieFrame;
 import com.lvpengwei.androidvideoplayer.opengl.media.render.EglCore;
@@ -12,6 +13,7 @@ import com.lvpengwei.androidvideoplayer.opengl.media.render.VideoGLSurfaceRender
 import com.lvpengwei.androidvideoplayer.player.common.CircleFrameTextureQueue;
 import com.lvpengwei.androidvideoplayer.player.common.FrameTexture;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
@@ -21,7 +23,7 @@ public class AVSynchronizer {
     private static String TAG = "AVSynchronizer";
     private static float LOCAL_MIN_BUFFERED_DURATION = 0.5f;
     private static float LOCAL_MAX_BUFFERED_DURATION = 0.8f;
-    private static float LOCAL_AV_SYNC_MAX_TIME_DIFF = 0.08f;
+    private static float LOCAL_AV_SYNC_MAX_TIME_DIFF = 0.05f;
     private static float FIRST_BUFFER_DURATION = 0.5f;
     private static float DEFAULT_AUDIO_BUFFER_DURATION_IN_SECS = 0.03f;
     private static int SEEK_REQUEST_LIST_MAX_SIZE = 2;
@@ -33,67 +35,72 @@ public class AVSynchronizer {
     //当前缓冲区是否有数据
     public boolean buffered;
     public boolean isCompleted;
-    UploaderCallbackImpl mUploaderCallback = new UploaderCallbackImpl();
+    private UploaderCallbackImpl mUploaderCallback = new UploaderCallbackImpl();
     EGLContext loadTextureContext;
-    VideoGLSurfaceRender passThorughRender;
+    private VideoGLSurfaceRender passThorughRender;
     //init 方法中调用的私有方法
 //    VideoDecoder videoDecoder;
     int decodeVideoErrorState;
     /**
      * 是否初始化解码线程
      **/
-    boolean isInitializeDecodeThread;
-    boolean isLoading;
-    float syncMaxTimeDiff;
-    float minBufferedDuration;//缓冲区的最短时长
-    float maxBufferedDuration;//缓冲区的最长时长
+    private boolean isInitializeDecodeThread;
+    private boolean isLoading;
+    private float syncMaxTimeDiff = LOCAL_AV_SYNC_MAX_TIME_DIFF;
+    private float minBufferedDuration = DEFAULT_AUDIO_BUFFER_DURATION_IN_SECS;//缓冲区的最短时长
+    private float maxBufferedDuration = DEFAULT_AUDIO_BUFFER_DURATION_IN_SECS;//缓冲区的最长时长
     /**
      * 解码出来的videoFrame与audioFrame的容器，以及同步操作信号量
      **/
-    Lock audioFrameQueueMutex;
-    List<AudioFrame> audioFrameQueue;
-    CircleFrameTextureQueue circleFrameTextureQueue;
+    private Lock audioFrameQueueMutex;
+    private List<AudioFrame> audioFrameQueue = new ArrayList<>();
+    private CircleFrameTextureQueue circleFrameTextureQueue;
     /**
      * 这里是为了将audioFrame中的数据，缓冲到播放音频的buffer中，有可能需要积攒几个frame，所以记录位置以及保存当前frame
      **/
-    AudioFrame currentAudioFrame;
-    int currentAudioFramePos;
+    private AudioFrame currentAudioFrame;
+    private int currentAudioFramePos;
     /**
      * 当前movie的position，用于同步音画
      **/
-    double moviePosition;
+    private double moviePosition;
     /**
      * 根据缓冲区来控制是否需要编解码的变量
      **/
-    float bufferedDuration;//当前缓冲区时长
-    //由于在解码器中解码的时候有可能会由于网络原因阻塞，甚至超时，所以这个时候需要将解码过程放到新的线程中
-    Thread videoDecoderThread;
+    private float bufferedPosition;//当前缓冲区时长
     /**
      * 由于在解码线程中要用到以下几个值，所以访问控制符是public的
      **/
-    boolean isDecodingFrames;
-    boolean isDecodingAudio;
-    boolean pauseDecodeThreadFlag;
+    private boolean isDecodingFrames;
+    private boolean isDecodingAudio;
+    private boolean pauseDecodeThreadFlag;
     private Lock videoDecoderLock;
     private Condition videoDecoderCondition;
 
     private Lock audioDecoderLock;
     private Condition audioDecoderCondition;
 
-    public AVSynchronizer() {
-    }
+    private Thread videoThread;
+    private Thread audioThread;
 
-    public void init(DecoderRequestHeader requestHeader, float minBufferedDuration, float maxBufferedDuration) {
+    public boolean init(DecoderRequestHeader requestHeader, float minBufferedDuration, float maxBufferedDuration) {
         circleFrameTextureQueue = new CircleFrameTextureQueue("DecodeVideoQueue");
         mUploaderCallback.setParent(this);
         isOnDecoding = false;
         isDestroyed = false;
-        createDecoderInstance();
-        videoDecoder.openFile(requestHeader);
+        audioDecoder = new AudioReader();
+        if (!audioDecoder.startReading(requestHeader.fd)) {
+            return false;
+        }
+        videoDecoder = new VideoReader();
+        if (!videoDecoder.startReading(requestHeader.fd)) {
+            return false;
+        }
         videoDecoder.startUploader(mUploaderCallback);
+        return true;
     }
 
-    public void OnInitFromUploaderGLContext(EglCore eglCore, int videoFrameWidth, int videoFrameHeight) {
+    void OnInitFromUploaderGLContext(EglCore eglCore, int videoFrameWidth, int videoFrameHeight) {
         if (null == passThorughRender) {
             passThorughRender = new VideoGLSurfaceRender();
             passThorughRender.init(videoFrameWidth, videoFrameHeight);
@@ -102,7 +109,7 @@ public class AVSynchronizer {
         eglCore.doneCurrent();
     }
 
-    public void onDestroyFromUploaderGLContext() {
+    void onDestroyFromUploaderGLContext() {
         destroyPassThorughRender();
         //清空并且销毁视频帧队列
         if (null != circleFrameTextureQueue) {
@@ -118,7 +125,6 @@ public class AVSynchronizer {
     }
 
     public void frameAvailable() {
-
     }
 
     public void processVideoFrame(int inputTexId, int width, int height, float position) {
@@ -130,11 +136,11 @@ public class AVSynchronizer {
     }
 
     public boolean validAudio() {
-        return false;
+        return true;
     }
 
     public boolean isValid() {
-        return false;
+        return true;
     }
 
     public int getVideoFrameHeight() {
@@ -150,11 +156,11 @@ public class AVSynchronizer {
     }
 
     public int getAudioChannels() {
-        return 2;
+        return audioDecoder.getAudioChannels();
     }
 
     public int getAudioSampleRate() {
-        return 0;
+        return audioDecoder.getAudioSampleRate();
     }
 
     public void start() {
@@ -170,8 +176,7 @@ public class AVSynchronizer {
         }
 
         //如果没有剩余的帧了或者当前缓存的长度大于我们的最小缓冲区长度的时候，就再一次开始解码
-        boolean isBufferedDurationDecreasedToMin = bufferedDuration <= minBufferedDuration ||
-                (circleFrameTextureQueue.getValidSize() <= minBufferedDuration * getVideoFPS());
+        boolean isBufferedDurationDecreasedToMin = circleFrameTextureQueue.getValidSize() <= minBufferedDuration * getVideoFPS();
 
         if (!isDestroyed && (videoDecoder.hasSeekReq()) || ((!isDecodingFrames) && isBufferedDurationDecreasedToMin)) {
             videoDecoderLock.lock();
@@ -181,15 +186,15 @@ public class AVSynchronizer {
     }
 
     private void signalDecodeAudioThread() {
-        if (null == videoDecoder || isDestroyed) {
+        if (null == audioDecoder || isDestroyed) {
             Log.i(TAG, "NULL == decoder || isDestroyed == true");
             return;
         }
 
         //如果没有剩余的帧了或者当前缓存的长度大于我们的最小缓冲区长度的时候，就再一次开始解码
-        boolean isBufferedDurationDecreasedToMin = bufferedDuration <= minBufferedDuration;
+        boolean isBufferedDurationDecreasedToMin = bufferedPosition - moviePosition <= minBufferedDuration;
 
-        if (!isDestroyed && (videoDecoder.hasSeekReq()) || ((!isDecodingAudio) && isBufferedDurationDecreasedToMin)) {
+        if (!isDestroyed && (audioDecoder.hasSeekReq()) || ((!isDecodingAudio) && isBufferedDurationDecreasedToMin)) {
             audioDecoderLock.lock();
             audioDecoderCondition.signal();
             audioDecoderLock.unlock();
@@ -214,7 +219,10 @@ public class AVSynchronizer {
 
         Log.i(TAG, "call decoder close video source URI ...");
         if (null != videoDecoder) {
-            videoDecoder.closeFile();
+            videoDecoder.stopReading();
+        }
+        if (null != audioDecoder) {
+            audioDecoder.stopReading();
         }
     }
 
@@ -224,17 +232,65 @@ public class AVSynchronizer {
     public void initCircleQueue(int videoWidth, int videoHeight) {
         circleFrameTextureQueue.init(videoWidth, videoHeight, 60);
     }
-//    inline bool canDecode(){
-//        return !pauseDecodeThreadFlag && !isDestroyed && videoDecoder && (videoDecoder->validVideo() || videoDecoder->validAudio()) && !videoDecoder->isVideoEOF();
-//    }
 
     public byte[] fillAudioData(int bufferSize) {
+        signalDecodeThread();
+        signalDecodeAudioThread();
+        checkPlayState();
+        if (buffered) {
+            return new byte[bufferSize];
+        }
         audioFrameQueueMutex.lock();
         AudioFrame frame = audioFrameQueue.remove(0);
         audioFrameQueueMutex.unlock();
         moviePosition = frame.position;
-        signalDecodeAudioThread();
         return frame.getBuffer();
+    }
+
+    private boolean checkPlayState() {
+        if (null == audioDecoder || null == circleFrameTextureQueue || null == audioFrameQueue || null == videoDecoder) {
+            Log.i(TAG, "NULL == decoder || NULL == circleFrameTextureQueue || NULL == audioFrameQueue || null == videoDecoder");
+            return false;
+        }
+        //判断是否是视频解码错误
+        if (1 == decodeVideoErrorState) {
+            decodeVideoErrorState = 0;
+//            this.videoDecodeException();
+        }
+
+        int leftVideoFrames = circleFrameTextureQueue.getValidSize();
+        int leftAudioFrames = audioFrameQueue.size();
+
+        if (leftVideoFrames == 1 || leftAudioFrames == 0) {
+            buffered = true;
+            if (!isLoading) {
+                isLoading = true;
+//                showLoadingDialog();
+            }
+            if (audioDecoder.isAudioEOF()) {
+                //由于OpenSLES 暂停之后有一些数据 还在buffer里面，暂停200ms让他播放完毕
+//                usleep(0.2 * 1000000);
+                isCompleted = true;
+//                onCompletion();
+//			LOGI("onCompletion...");
+                return true;
+            }
+        } else {
+            boolean isBufferedDurationIncreasedToMin = leftVideoFrames >= minBufferedDuration*getVideoFPS() && (bufferedPosition - moviePosition >= minBufferedDuration);
+
+            if (!audioDecoder.hasSeekReq() && (isBufferedDurationIncreasedToMin || audioDecoder.isAudioEOF())) {
+//			LOGI("Setting Buffered is False : leftAudioFrames is %d, leftVideoFrames is %d, bufferedDuration is %f, minBufferedDuration is %f",
+//					leftAudioFrames, leftVideoFrames, bufferedDuration, minBufferedDuration);
+                buffered = false;
+                //回调android客户端hide loading dialog
+                if (isLoading) {
+                    isLoading = false;
+//                    hideLoadingDialog();
+                }
+            }
+        }
+
+        return false;
     }
 
     public FrameTexture getCorrectRenderTexture(boolean forceGetFrame) {
@@ -277,7 +333,7 @@ public class AVSynchronizer {
         return texture;
     }
 
-    FrameTexture getFirstRenderTexture() {
+    public FrameTexture getFirstRenderTexture() {
         if (circleFrameTextureQueue == null) return null;
         return circleFrameTextureQueue.getFirstFrameFrameTexture();
     }
@@ -301,7 +357,7 @@ public class AVSynchronizer {
     private void decodeFrames() {
         while (true) {
             if (canDecodeVideo()) {
-                videoDecoder.decode();
+                videoDecoder.copyNextSample();
             } else {
                 break;
             }
@@ -326,7 +382,7 @@ public class AVSynchronizer {
             frameTexture.position = position;
 //		LOGI("Render To TextureQueue texture Position is %.3f ", position);
             //cpy input texId to target texId
-            passThorughRender.renderToTexture(inputTexId, frameTexture.texId);
+            passThorughRender.renderToTexture(inputTexId, frameTexture);
             circleFrameTextureQueue.unLockPushCursorFrameTexture();
 
             frameAvailable();
@@ -336,7 +392,7 @@ public class AVSynchronizer {
                 FrameTexture firstFrameTexture = circleFrameTextureQueue.getFirstFrameFrameTexture();
                 if (firstFrameTexture != null) {
                     //cpy input texId to target texId
-                    passThorughRender.renderToTexture(inputTexId, firstFrameTexture.texId);
+                    passThorughRender.renderToTexture(inputTexId, firstFrameTexture);
                 }
             }
         }
@@ -360,6 +416,7 @@ public class AVSynchronizer {
         buffered = true;
         isCompleted = false;
         moviePosition = position;
+        audioDecoder.setPosition(position);
         videoDecoder.setPosition(position);
     }
 
@@ -384,14 +441,17 @@ public class AVSynchronizer {
     private void decodeAudioFrames() {
         while (true) {
             if (canDecodeAudio()) {
-                byte[] buffer = videoDecoder.decodeAudio();
-                AudioFrame frame = new AudioFrame();
-                frame.setBuffer(buffer);
+                AudioFrame frame = audioDecoder.copyNexSample();
+                float currentPosition = frame.position;
                 audioFrameQueueMutex.lock();
                 audioFrameQueue.add(frame);
-                int size = audioFrameQueue.size();
+                float firstPosition = 0;
+                if (audioFrameQueue.size() > 0) {
+                    firstPosition = audioFrameQueue.get(0).position;
+                }
+                bufferedPosition = currentPosition;
                 audioFrameQueueMutex.unlock();
-                if (size > 10) {
+                if (currentPosition - firstPosition > maxBufferedDuration) {
                     break;
                 }
             } else {
@@ -401,10 +461,8 @@ public class AVSynchronizer {
     }
 
     //    bool isHWCodecAvaliable();
-    private VideoDecoder videoDecoder;
-    private void createDecoderInstance() {
-        videoDecoder = new VideoDecoder();
-    }
+    private VideoReader videoDecoder;
+    private AudioReader audioDecoder;
 
     private void initMeta() {
 
@@ -416,7 +474,8 @@ public class AVSynchronizer {
     }
 
     private void closeDecoder() {
-
+        videoDecoder.stopReading();
+        audioDecoder.stopReading();
     }
 
     //start 中用到的变量以及方法
@@ -428,9 +487,6 @@ public class AVSynchronizer {
     private boolean addFrames(float thresholdDuration, List<MovieFrame> frames) {
         return false;
     }
-
-    private Thread videoThread;
-    private Thread audioThread;
 
     /**
      * 开启解码线程
@@ -467,7 +523,7 @@ public class AVSynchronizer {
     /**
      * 销毁解码线程
      **/
-    void destroyDecoderThread() {
+    private void destroyDecoderThread() {
         isOnDecoding = false;
         if (!isInitializeDecodeThread) {
             return;
@@ -478,7 +534,7 @@ public class AVSynchronizer {
     }
 
     // 调用解码器解码指定position的frame
-    void decodeFrameByPosition(float pos) {
+    public void decodeFrameByPosition(float pos) {
     }
 
     private void clearVideoFrameQueue() {
@@ -486,11 +542,11 @@ public class AVSynchronizer {
         circleFrameTextureQueue.clear();
     }
 
-    void clearAudioFrameQueue() {
+    private void clearAudioFrameQueue() {
         audioFrameQueueMutex.lock();
         audioFrameQueue.clear();
 
-        bufferedDuration = 0;
+        bufferedPosition = 0;
         audioFrameQueueMutex.unlock();
     }
 
@@ -499,6 +555,7 @@ public class AVSynchronizer {
     }
 
     private boolean canDecodeAudio() {
-        return !pauseDecodeThreadFlag && !isDestroyed && videoDecoder != null && !videoDecoder.isAudioEOF();
+        return !pauseDecodeThreadFlag && !isDestroyed && videoDecoder != null && !audioDecoder.isAudioEOF();
     }
+
 }

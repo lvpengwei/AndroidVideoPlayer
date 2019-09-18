@@ -3,8 +3,10 @@ package com.lvpengwei.androidvideoplayer.player;
 import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioTrack;
+import android.util.Log;
 
 public class AudioOutput {
+    private static String TAG = "AudioOutput";
     public static double DEFAULT_AUDIO_BUFFER_DURATION_IN_SECS = 0.03;
 
     public interface AudioOutputCallback {
@@ -25,17 +27,18 @@ public class AudioOutput {
 
     private int bufferSize;
 
-    public AudioOutput(int channels, int accompanySampleRate, AudioOutputCallback callback, Object ctx) {
+    public void init(int channels, int accompanySampleRate, AudioOutputCallback callback, Object ctx) {
         this.produceDataCallback = callback;
         this.ctx = ctx;
         this.bufferSize = (int) (channels * accompanySampleRate * 2 * DEFAULT_AUDIO_BUFFER_DURATION_IN_SECS);
         int outputBufferSize = AudioTrack.getMinBufferSize(accompanySampleRate, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT);
         mAudioTrack = new AudioTrack(AudioManager.STREAM_MUSIC, accompanySampleRate, channels, AudioFormat.ENCODING_PCM_16BIT, outputBufferSize, AudioTrack.MODE_STREAM);
+//        mAudioTrack.setPositionNotificationPeriod(bufferSize / 2);
         mAudioTrack.setPositionNotificationPeriod(200);
         mAudioTrack.setPlaybackPositionUpdateListener(new AudioTrack.OnPlaybackPositionUpdateListener() {
             @Override
             public void onMarkerReached(AudioTrack track) {
-
+                Log.i(TAG, "");
             }
 
             @Override
@@ -55,8 +58,9 @@ public class AudioOutput {
 
     public void start() {
         if (mAudioTrack == null) return;
-        producePacket();
         playingState = PlayingState.playing;
+        producePacket();
+        mAudioTrack.play();
     }
 
     public void play() {

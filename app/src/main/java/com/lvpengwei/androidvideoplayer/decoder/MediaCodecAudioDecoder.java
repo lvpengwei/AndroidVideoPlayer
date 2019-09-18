@@ -1,6 +1,7 @@
 package com.lvpengwei.androidvideoplayer.decoder;
 
 import android.annotation.TargetApi;
+import android.content.res.AssetFileDescriptor;
 import android.media.MediaCodec;
 import android.media.MediaExtractor;
 import android.media.MediaFormat;
@@ -40,7 +41,7 @@ public class MediaCodecAudioDecoder {
         m_bufferInfo = new MediaCodec.BufferInfo();
     }
 
-    public boolean OpenFile(String audioFilePath) {
+    public boolean OpenFile(AssetFileDescriptor afd) {
         if (IsValid()) {
             Log.e(TAG, "You can't call OpenFile() twice!");
             return false;
@@ -49,7 +50,7 @@ public class MediaCodecAudioDecoder {
         // Create media extractor and set data source
         try {
             m_extractor = new MediaExtractor();
-            m_extractor.setDataSource(audioFilePath);
+            m_extractor.setDataSource(afd.getFileDescriptor(), afd.getStartOffset(), afd.getLength());
             m_extractorInOriginalState = true;
         } catch (Exception e) {
             Log.e(TAG, "" + e.getMessage());
@@ -73,7 +74,7 @@ public class MediaCodecAudioDecoder {
         }
 
         if (m_videoTrackIndex < 0) {
-            Log.e(TAG, "Failed to find a video track from " + audioFilePath);
+//            Log.e(TAG, "Failed to find a video track from " + audioFilePath);
             CloseFile();
             return false;
         }
@@ -505,11 +506,21 @@ public class MediaCodecAudioDecoder {
         }
     }
 
-    public static ByteBuffer getOutputBuffer(MediaCodec codec, int index) throws IllegalStateException {
+    private static ByteBuffer getOutputBuffer(MediaCodec codec, int index) throws IllegalStateException {
         if (Build.VERSION.SDK_INT < 21) {
             return codec.getOutputBuffers()[index];
         }
         return codec.getOutputBuffer(index);
+    }
+
+    public int getAudioChannels() {
+        if (m_format == null) return 0;
+        return m_format.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
+    }
+
+    public int getAudioSampleRate() {
+        if (m_format == null) return 0;
+        return m_format.getInteger(MediaFormat.KEY_SAMPLE_RATE);
     }
 
 }

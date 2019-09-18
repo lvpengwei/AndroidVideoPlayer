@@ -21,19 +21,19 @@ public class EglCore {
     private EGLContext eglContext;
     private EGLConfig[] configs;
 
-    public EglCore() {
-        this(EglShareContext.getInstance().getSharedContext());
+    public boolean initWithShareContext() {
+        return init(EglShareContext.getInstance().getSharedContext());
     }
 
-    public EglCore(EGLContext context) {
+    public boolean init(EGLContext context) {
         if ((eglDisplay = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)) == EGL14.EGL_NO_DISPLAY) {
             Log.e(TAG, "eglGetDisplay() returned error " + EGL14.eglGetError());
-            return;
+            return false;
         }
         int[] version = new int[2];
         if (!EGL14.eglInitialize(eglDisplay, version, 0, version, 1)) {
             Log.e(TAG, "eglInitialize() returned error " + EGL14.eglGetError());
-            return;
+            return false;
         }
         int[] attributeList = {
                 EGL14.EGL_RED_SIZE, 8,
@@ -49,7 +49,7 @@ public class EglCore {
         if (!EGL14.eglChooseConfig(eglDisplay, attributeList, 0, configs, 0, configs.length,
                 numConfigs, 0)) {
             Log.e(TAG, "eglChooseConfig() returned error " + EGL14.eglGetError());
-            return;
+            return false;
         }
         int[] attribute_list = {
                 EGL14.EGL_CONTEXT_CLIENT_VERSION, 2,
@@ -58,8 +58,9 @@ public class EglCore {
         eglContext = EGL14.eglCreateContext(eglDisplay, configs[0], null == context ? EGL14.EGL_NO_CONTEXT : context, attribute_list, 0);
         if (eglContext == null) {
             Log.e(TAG, "eglCreateContext() returned error " + EGL14.eglGetError());
-            return;
+            return false;
         }
+        return true;
     }
 
     public void setPresentationTime(EGLSurface eglSurface, long usecs) {
@@ -106,6 +107,7 @@ public class EglCore {
     }
 
     public EGLSurface createWindowSurface(Object surface) {
+        if (surface == null) return null;
         if (!(surface instanceof Surface) && !(surface instanceof SurfaceTexture)) {
             throw new RuntimeException("invalid surface: " + surface);
         }

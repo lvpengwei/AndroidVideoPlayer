@@ -5,11 +5,10 @@ import android.media.MediaExtractor;
 import android.media.MediaFormat;
 import android.util.Log;
 
-import com.lvpengwei.androidvideoplayer.opengl.media.render.EglCore;
-import com.lvpengwei.androidvideoplayer.opengl.media.render.VideoGLSurfaceRender;
 import com.lvpengwei.androidvideoplayer.opengl.media.texture.TextureFrame;
 import com.lvpengwei.androidvideoplayer.opengl.media.texture.uploader.GPUTextureFrameUploader;
 import com.lvpengwei.androidvideoplayer.opengl.media.texture.uploader.TextureFrameUploader;
+import com.lvpengwei.androidvideoplayer.player.common.FrameTexture;
 
 import java.io.IOException;
 import java.util.concurrent.locks.Condition;
@@ -21,6 +20,10 @@ import static android.media.MediaFormat.KEY_WIDTH;
 
 public class VideoReader {
     private static String TAG = "VideoReader";
+
+    private float seek_seconds;
+    private boolean seek_req;
+    private boolean seek_resp;
     private TextureFrameUploader textureFrameUploader;
     private Lock mLock;
     private Condition mCondition;
@@ -32,7 +35,6 @@ public class VideoReader {
     private MediaCodecVideoDecoder videoDecoder;
     private int decodeTexId;
     private boolean isMediaCodecInit;
-    private SampleBuffer buffer;
     private AssetFileDescriptor fd;
 
     public boolean startReading(AssetFileDescriptor afd) {
@@ -62,42 +64,14 @@ public class VideoReader {
         mCondition = mLock.newCondition();
         videoDecoder = new MediaCodecVideoDecoder();
         isVideoOutputEOF = false;
-        startUploader(new TextureFrameUploader.UploaderCallback() {
-            @Override
-            public void processVideoFrame(int inputTexId, int width, int height, float position) {
-                buffer = new SampleBuffer();
-                buffer.position = position;
-                buffer.texID = inputTexId;
-                Log.i(TAG, "");
-            }
-
-            @Override
-            public int processAudioData(short sample, int size, float position, byte buffer) {
-                return 0;
-            }
-
-            @Override
-            public void onSeekCallback(float seek_seconds) {
-
-            }
-
-            @Override
-            public void initFromUploaderGLContext(EglCore eglCore) {
-            }
-
-            @Override
-            public void destroyFromUploaderGLContext() {
-            }
-        });
         return true;
     }
-
 
     public void stopReading() {
         videoDecoder.CloseFile();
     }
 
-    public SampleBuffer copyNextSample() {
+    public FrameTexture copyNextSample() {
         if (!isMediaCodecInit) {
             initializeMediaCodec();
             isMediaCodecInit = true;
@@ -105,13 +79,13 @@ public class VideoReader {
         int ret = videoDecoder.GetNextVideoFrameForPlayback();
         if (ret == MediaCodecVideoDecoder.ERROR_OK) {
             uploadTexture();
-            return buffer;
+            return null;
         } else if (ret == MediaCodecVideoDecoder.ERROR_EOF) {
             isVideoOutputEOF = true;
-            return SampleBuffer.EOF();
+            return FrameTexture.EOF();
         } else {
             Log.e(TAG, "decode video error");
-            return SampleBuffer.ERROR();
+            return FrameTexture.ERROR();
         }
     }
 
@@ -125,10 +99,10 @@ public class VideoReader {
     }
 
     private float updateTexImage(TextureFrame textureFrame) {
-        return videoDecoder.updateTexImage();
+        return (float) (videoDecoder.updateTexImage() * 0.000001 * 0.001);
     }
 
-    private void startUploader(TextureFrameUploader.UploaderCallback uploaderCallback) {
+    public void startUploader(TextureFrameUploader.UploaderCallback uploaderCallback) {
         mUploaderCallback = uploaderCallback;
         textureFrameUploader = createTextureFrameUploader();
         textureFrameUploader.registerUpdateTexImageCallback(new TextureFrameUploader.UpdateTexImageCallback() {
@@ -166,8 +140,37 @@ public class VideoReader {
         mLock.unlock();
     }
 
+    public void setPosition(float seconds) {
+        this.seek_seconds = seconds;
+        this.seek_req = true;
+        this.seek_resp = false;
+
+        isVideoOutputEOF = false;
+    }
+
+    public void seek_frame() {
+        long seek_target = (long) (seek_seconds * 1000000);
+        videoDecoder.beforeSeek();
+        videoDecoder.SeekVideoFrame(seek_target, 0);
+
+        if (mUploaderCallback != null) {
+            mUploaderCallback.onSeekCallback(seek_seconds);
+        } else {
+            Log.e(TAG, "VideoDecoder::mUploaderCallback is NULL");
+        }
+
+        seek_resp = true;
+    }
+
     public boolean isVideoEOF() {
         return isVideoOutputEOF;
     }
 
+    public boolean hasSeekReq() {
+        return seek_req;
+    }
+
+    public boolean hasSeekResp() {
+        return seek_resp;
+    }
 }

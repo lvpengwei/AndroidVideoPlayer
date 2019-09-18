@@ -213,7 +213,6 @@ public class CircleFrameTextureQueue {
     private void buildGPUFrame(FrameTexture frameTexture, int width, int height) {
         int[] textures = new int[1];
         GLES20.glGenTextures(1, textures, 0);
-
         int texId = textures[0];
         GLTools.checkEglError("glGenTextures texId");
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texId);
@@ -224,7 +223,6 @@ public class CircleFrameTextureQueue {
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE);
         int internalFormat = GLES20.GL_RGBA;
         GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D, 0, internalFormat, width, height, 0, internalFormat, GLES20.GL_UNSIGNED_BYTE, null);
-
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0);
         frameTexture.texId = texId;
     }
