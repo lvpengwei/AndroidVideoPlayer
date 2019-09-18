@@ -5,20 +5,25 @@ import android.opengl.EGLSurface;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Message;
+import android.util.Log;
 import android.view.Surface;
 
+import com.lvpengwei.androidvideoplayer.decoder.SampleBuffer;
 import com.lvpengwei.androidvideoplayer.opengl.media.render.EglCore;
 import com.lvpengwei.androidvideoplayer.opengl.media.render.VideoGLSurfaceRender;
 
 public class VideoOutput {
 
+    private static String TAG = "VideoOutput";
+
     private static final int VIDEO_OUTPUT_MESSAGE_CREATE_EGL_CONTEXT = 1;
     private static final int VIDEO_OUTPUT_MESSAGE_DESTROY_EGL_CONTEXT = 2;
     private static final int VIDEO_OUTPUT_MESSAGE_RENDER_FRAME = 3;
+    private static final int VIDEO_OUTPUT_MESSAGE_DESTROY_WINDOW_SURFACE = 4;
     private boolean eglHasDestroyed;
 
     public interface VideoOutputCallback {
-        int getTexture();
+        SampleBuffer getTexture(Object ctx, boolean forceGetFrame);
     }
 
     private Surface surface;
@@ -51,6 +56,11 @@ public class VideoOutput {
         sendMessage(VIDEO_OUTPUT_MESSAGE_RENDER_FRAME);
     }
 
+    public void onSurfaceDestroyed() {
+        Log.i(TAG, "enter VideoOutput::onSurfaceDestroyed");
+        sendMessage(VIDEO_OUTPUT_MESSAGE_DESTROY_WINDOW_SURFACE);
+    }
+
     private void sendMessage(int msgId) {
         mHandler.obtainMessage(msgId).sendToTarget();
     }
@@ -68,9 +78,9 @@ public class VideoOutput {
     }
 
     private void renderVideo() {
-        int texID = videoOutputCallback.getTexture();
+        SampleBuffer buffer = videoOutputCallback.getTexture(ctx, forceGetFrame);
         eglCore.makeCurrent(renderTexSurface);
-        render.renderToView(texID, screenWidth, screenHeight);
+        render.renderToViewWithAspectFit(buffer.texID, 1920, 1080);
         eglCore.swapBuffers(renderTexSurface);
         if (forceGetFrame) forceGetFrame = false;
     }
@@ -90,15 +100,17 @@ public class VideoOutput {
         surfaceExists = false;
     }
 
-    private void stopOutput() {
+    public void stopOutput() {
         if (mHandler == null) return;
         sendMessage(VIDEO_OUTPUT_MESSAGE_DESTROY_EGL_CONTEXT);
+        mThread.quitSafely();
     }
 
     private void destroyEGLContext() {
         if (EGL14.EGL_NO_SURFACE != renderTexSurface) {
             eglCore.makeCurrent(renderTexSurface);
         }
+        destroyWindowSurface();
         if (eglCore != null) {
             eglCore.release();
             eglCore = null;
@@ -124,6 +136,9 @@ public class VideoOutput {
                         break;
                     case VIDEO_OUTPUT_MESSAGE_DESTROY_EGL_CONTEXT:
                         destroyEGLContext();
+                        break;
+                    case VIDEO_OUTPUT_MESSAGE_DESTROY_WINDOW_SURFACE:
+                        destroyWindowSurface();
                         break;
                     default:
                         break;

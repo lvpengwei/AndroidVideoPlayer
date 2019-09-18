@@ -1,37 +1,32 @@
 package com.lvpengwei.androidvideoplayer;
 
 import android.content.res.AssetFileDescriptor;
-import android.graphics.SurfaceTexture;
-import android.opengl.EGLSurface;
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
-import android.view.TextureView;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
 
 import com.lvpengwei.androidvideoplayer.decoder.SampleBuffer;
 import com.lvpengwei.androidvideoplayer.decoder.VideoReader;
-import com.lvpengwei.androidvideoplayer.opengl.media.render.EglCore;
-import com.lvpengwei.androidvideoplayer.opengl.media.render.VideoGLSurfaceRender;
+import com.lvpengwei.androidvideoplayer.player.VideoOutput;
 
 import java.io.IOException;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements SurfaceHolder.Callback {
 
     private static String TAG = "MainActivity";
 
     private static final Object renderStartLock = new Object();
-    private static final Object renderLock = new Object();
     private static SampleBuffer sampleBuffer;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        TextureView surfaceView = findViewById(R.id.surface_view);
-        Renderer renderer = new Renderer();
-        surfaceView.setSurfaceTextureListener(renderer);
+        SurfaceView surfaceView = findViewById(R.id.surface_view);
+        surfaceView.getHolder().addCallback(this);
         startReading();
-        renderer.start();
     }
 
     private VideoReader reader;
@@ -59,14 +54,14 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
                 while (!reader.isVideoEOF()) {
-                    synchronized (renderLock) {
-                        if (sampleBuffer != null) {
-                            sampleBuffer.dealloc();
-                        }
-                        sampleBuffer = reader.copyNextSample();
-                        Log.i(TAG, "" + sampleBuffer);
-                        if (sampleBuffer.texID > 0) {
-                            renderLock.notify();
+                    if (sampleBuffer != null) {
+                        sampleBuffer.dealloc();
+                    }
+                    sampleBuffer = reader.copyNextSample();
+                    Log.i(TAG, "" + sampleBuffer);
+                    if (sampleBuffer.texID > 0) {
+                        synchronized (videoOutputLock) {
+                            videoOutput.signalFrameAvailable();
                         }
                     }
                     try {
@@ -80,122 +75,35 @@ public class MainActivity extends AppCompatActivity {
         }).start();
     }
 
-    private static class Renderer extends Thread implements TextureView.SurfaceTextureListener {
-        private final Object mLock = new Object();        // guards mSurfaceTexture, mDone
-        private int width;
-        private int height;
-        private SurfaceTexture mSurfaceTexture;
-        private EglCore mEglCore;
-        private EGLSurface eglSurface;
-        private VideoGLSurfaceRender render;
-        private boolean mDone;
+    @Override
+    public void surfaceCreated(SurfaceHolder holder) {
 
-        public Renderer() {
-            super("TextureViewGL Renderer");
-        }
+    }
 
-        @Override
-        public void run() {
-            while (true) {
-                SurfaceTexture surfaceTexture = null;
+    private final Object videoOutputLock = new Object();
+    private VideoOutput videoOutput;
 
-                // Latch the SurfaceTexture when it becomes available.  We have to wait for
-                // the TextureView to create it.
-                synchronized (mLock) {
-                    while (!mDone && (surfaceTexture = mSurfaceTexture) == null) {
-                        try {
-                            mLock.wait();
-                        } catch (InterruptedException ie) {
-                            throw new RuntimeException(ie);     // not expected
-                        }
-                    }
-                    if (mDone) {
-                        break;
-                    }
+    @Override
+    public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+        synchronized (videoOutputLock) {
+            if (videoOutput != null) {
+                videoOutput.stopOutput();
+            }
+            videoOutput = new VideoOutput(holder.getSurface(), width, height, new VideoOutput.VideoOutputCallback() {
+                @Override
+                public SampleBuffer getTexture(Object ctx, boolean forceGetFrame) {
+                    return sampleBuffer;
                 }
-                Log.d(TAG, "Got surfaceTexture=" + surfaceTexture);
-
-                mEglCore = new EglCore();
-                eglSurface = mEglCore.createWindowSurface(surfaceTexture);
-                mEglCore.makeCurrent(eglSurface);
-                render = new VideoGLSurfaceRender();
-                render.init(width, height);
-
-                synchronized (renderStartLock) {
-                    renderStartLock.notify();
-                }
-
-                doAnimation();
-
-                mEglCore.releaseSurface(eglSurface);
-                mEglCore.release();
-            }
-
-            Log.d(TAG, "Renderer thread exiting");
+            }, this);
         }
-
-        private void doAnimation() {
-            while (true) {
-                // Check to see if the TextureView's SurfaceTexture is still valid.
-                synchronized (mLock) {
-                    SurfaceTexture surfaceTexture = mSurfaceTexture;
-                    if (surfaceTexture == null) {
-                        Log.d(TAG, "doAnimation exiting");
-                        return;
-                    }
-                }
-                synchronized (renderLock) {
-                    try {
-                        renderLock.wait();
-                        mEglCore.makeCurrent(eglSurface);
-                        render.renderToViewWithAspectFit(sampleBuffer.texID, 1920, 1080);
-                        mEglCore.swapBuffers(eglSurface);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                }
-            }
-        }
-
-        /**
-         * Tells the thread to stop running.
-         */
-        public void halt() {
-            synchronized (mLock) {
-                mDone = true;
-                mLock.notify();
-            }
-        }
-
-        @Override   // will be called on UI thread
-        public void onSurfaceTextureAvailable(SurfaceTexture st, int width, int height) {
-            Log.d(TAG, "onSurfaceTextureAvailable(" + width + "x" + height + ")");
-            synchronized (mLock) {
-                this.width = width;
-                this.height = height;
-                mSurfaceTexture = st;
-                mLock.notify();
-            }
-        }
-
-        @Override   // will be called on UI thread
-        public void onSurfaceTextureSizeChanged(SurfaceTexture st, int width, int height) {
-            Log.d(TAG, "onSurfaceTextureSizeChanged(" + width + "x" + height + ")");
-        }
-
-        @Override   // will be called on UI thread
-        public boolean onSurfaceTextureDestroyed(SurfaceTexture st) {
-            Log.d(TAG, "onSurfaceTextureDestroyed");
-
-            synchronized (mLock) {
-                mSurfaceTexture = null;
-            }
-            return false;
-        }
-
-        @Override   // will be called on UI thread
-        public void onSurfaceTextureUpdated(SurfaceTexture st) {
-            //Log.d(TAG, "onSurfaceTextureUpdated");
+        synchronized (renderStartLock) {
+            renderStartLock.notify();
         }
     }
+
+    @Override
+    public void surfaceDestroyed(SurfaceHolder holder) {
+        videoOutput.onSurfaceDestroyed();
+    }
+
 }
