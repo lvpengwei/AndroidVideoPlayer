@@ -94,6 +94,79 @@ public class VideoGLSurfaceRender {
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0);
     }
 
+    enum ScaleType {
+        FILL,
+        ASPECT_FIT,
+    }
+
+    public void renderToView(int texID, int texWidth, int texHeight, ScaleType scaleType) {
+        GLES20.glViewport(0, 0, _backingWidth, _backingHeight);
+
+        if (!mIsInitialized) {
+            Log.e(TAG, "ViewRenderEffect::renderEffect effect not initialized!");
+            return;
+        }
+
+        float textureAspectRatio = (float) texHeight / (float) texWidth;
+        float viewAspectRatio = (float) _backingWidth / (float) _backingHeight;
+        float xOffset = 0.0f;
+        float yOffset = 0.0f;
+        if (scaleType == ScaleType.FILL) {
+            if (textureAspectRatio > viewAspectRatio) {
+                // Update Y Offset
+                int expectedHeight = (int) ((float) texHeight * _backingWidth / (float) texWidth + 0.5f);
+                yOffset = (float) (expectedHeight - _backingHeight) / (2 * expectedHeight);
+            } else if (textureAspectRatio < viewAspectRatio) {
+                // Update X Offset
+                int expectedWidth = (int) ((float) (texHeight * _backingWidth) / (float) _backingHeight + 0.5);
+                xOffset = (float) (texWidth - expectedWidth) / (2 * texWidth);
+            }
+        } else {
+            if (textureAspectRatio > viewAspectRatio) {
+                //Update X Offset
+                int expectedWidth = (int) ((float) (texHeight * _backingWidth) / (float) _backingHeight + 0.5);
+                xOffset = (float) (texWidth - expectedWidth) / (2 * texWidth);
+            } else if (textureAspectRatio < viewAspectRatio) {
+                //Update Y Offset
+                int expectedHeight = (int) ((float) texHeight * _backingWidth / (float) texWidth + 0.5f);
+                yOffset = (float) (expectedHeight - _backingHeight) / (2 * expectedHeight);
+            }
+        }
+
+        GLES20.glUseProgram(mGLProgId);
+        float[] vertices = {-1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f};
+        FloatBuffer vertexBuffer = ByteBuffer.allocateDirect(vertices.length * 4)
+                .order(ByteOrder.nativeOrder())
+                .asFloatBuffer()
+                .put(vertices);
+        vertexBuffer.position(0);
+        GLES20.glVertexAttribPointer(mGLVertexCoords, 2, GLES20.GL_FLOAT, false, 0, vertexBuffer);
+        GLES20.glEnableVertexAttribArray(mGLVertexCoords);
+        float[] texCoords = {xOffset, (float) (1.0 - yOffset), (float) (1.0 - xOffset), (float) (1.0 - yOffset), xOffset, yOffset,
+                (float) (1.0 - xOffset), yOffset};
+        FloatBuffer texCoordsBuffer = ByteBuffer.allocateDirect(texCoords.length * 4)
+                .order(ByteOrder.nativeOrder())
+                .asFloatBuffer()
+                .put(texCoords);
+        texCoordsBuffer.position(0);
+        GLES20.glVertexAttribPointer(mGLTextureCoords, 2, GLES20.GL_FLOAT, false, 0, texCoordsBuffer);
+        GLES20.glEnableVertexAttribArray(mGLTextureCoords);
+
+        /* Binding the input texture */
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texID);
+        GLES20.glUniform1i(mGLUniformTexture, 0);
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
+
+        GLES20.glDisableVertexAttribArray(mGLVertexCoords);
+        GLES20.glDisableVertexAttribArray(mGLTextureCoords);
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0);
+    }
+
+    public void renderToViewWithAspectFit(int texID, int texWidth, int texHeight) {
+        renderToView(texID, texWidth, texHeight, ScaleType.ASPECT_FIT);
+    }
+
     public void renderToTexture(int inputTexId, int outputTexId) {
         GLES20.glViewport(_backingLeft, _backingTop, _backingWidth, _backingHeight);
 

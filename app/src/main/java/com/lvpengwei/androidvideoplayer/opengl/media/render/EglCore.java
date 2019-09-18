@@ -17,7 +17,6 @@ public class EglCore {
     private static final int EGL_OPENGL_ES2_BIT = 4;
 
     private EGLDisplay eglDisplay;
-    private Surface surface;
 
     private EGLContext eglContext;
     private EGLConfig[] configs;
@@ -64,7 +63,7 @@ public class EglCore {
     }
 
     public void setPresentationTime(EGLSurface eglSurface, long usecs) {
-        if (surface != null) {
+        if (eglSurface != null) {
             EGLExt.eglPresentationTimeANDROID(eglDisplay, eglSurface, usecs * 1000);
         }
     }

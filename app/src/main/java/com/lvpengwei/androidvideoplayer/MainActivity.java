@@ -22,13 +22,12 @@ public class MainActivity extends AppCompatActivity {
     private static final Object renderStartLock = new Object();
     private static final Object renderLock = new Object();
     private static SampleBuffer sampleBuffer;
-    private TextureView surfaceView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        surfaceView = findViewById(R.id.surface_view);
+        TextureView surfaceView = findViewById(R.id.surface_view);
         Renderer renderer = new Renderer();
         surfaceView.setSurfaceTextureListener(renderer);
         startReading();
@@ -71,7 +70,7 @@ public class MainActivity extends AppCompatActivity {
                         }
                     }
                     try {
-                        Thread.sleep(33);
+                        Thread.sleep(32);
                     } catch (InterruptedException e) {
                         e.printStackTrace();
                     }
@@ -82,7 +81,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private static class Renderer extends Thread implements TextureView.SurfaceTextureListener {
-        private Object mLock = new Object();        // guards mSurfaceTexture, mDone
+        private final Object mLock = new Object();        // guards mSurfaceTexture, mDone
         private int width;
         private int height;
         private SurfaceTexture mSurfaceTexture;
@@ -149,7 +148,7 @@ public class MainActivity extends AppCompatActivity {
                     try {
                         renderLock.wait();
                         mEglCore.makeCurrent(eglSurface);
-                        render.renderToView(sampleBuffer.texID, 1920, 1080);
+                        render.renderToViewWithAspectFit(sampleBuffer.texID, 1920, 1080);
                         mEglCore.swapBuffers(eglSurface);
                     } catch (InterruptedException e) {
                         e.printStackTrace();
