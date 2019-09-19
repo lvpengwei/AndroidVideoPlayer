@@ -23,7 +23,7 @@ public class AVSynchronizer {
     private static String TAG = "AVSynchronizer";
     private static float LOCAL_MIN_BUFFERED_DURATION = 0.5f;
     private static float LOCAL_MAX_BUFFERED_DURATION = 0.8f;
-    private static float LOCAL_AV_SYNC_MAX_TIME_DIFF = 0.05f;
+    private static float LOCAL_AV_SYNC_MAX_TIME_DIFF = 0.08f;
     private static float FIRST_BUFFER_DURATION = 0.5f;
     private static float DEFAULT_AUDIO_BUFFER_DURATION_IN_SECS = 0.03f;
     private static int SEEK_REQUEST_LIST_MAX_SIZE = 2;
@@ -47,8 +47,8 @@ public class AVSynchronizer {
     private boolean isInitializeDecodeThread;
     private boolean isLoading;
     private float syncMaxTimeDiff = LOCAL_AV_SYNC_MAX_TIME_DIFF;
-    private float minBufferedDuration = DEFAULT_AUDIO_BUFFER_DURATION_IN_SECS;//缓冲区的最短时长
-    private float maxBufferedDuration = DEFAULT_AUDIO_BUFFER_DURATION_IN_SECS;//缓冲区的最长时长
+    private float minBufferedDuration = LOCAL_MIN_BUFFERED_DURATION;//缓冲区的最短时长
+    private float maxBufferedDuration = LOCAL_MAX_BUFFERED_DURATION;//缓冲区的最长时长
     /**
      * 解码出来的videoFrame与audioFrame的容器，以及同步操作信号量
      **/
@@ -144,11 +144,11 @@ public class AVSynchronizer {
     }
 
     public int getVideoFrameHeight() {
-        return 0;
+        return videoDecoder.getVideoFrameHeight();
     }
 
     public int getVideoFrameWidth() {
-        return 0;
+        return videoDecoder.getVideoFrameWidth();
     }
 
     public float getVideoFPS() {
@@ -167,6 +167,10 @@ public class AVSynchronizer {
         isOnDecoding = true;
         circleFrameTextureQueue.setFirstFrame(true);
         initDecoderThread();
+    }
+
+    public void setMoviePosition(double moviePosition) {
+        this.moviePosition = moviePosition;
     }
 
     private void signalDecodeThread() {
@@ -230,8 +234,22 @@ public class AVSynchronizer {
     }
 
     public void initCircleQueue(int videoWidth, int videoHeight) {
-        circleFrameTextureQueue.init(videoWidth, videoHeight, 60);
+        int queueSize = (int) ((maxBufferedDuration + 1.0) * getVideoFPS());
+        circleFrameTextureQueue.init(videoWidth, videoHeight, queueSize);
     }
+
+//    public byte[] fillAudioData() {
+//        signalDecodeThread();
+//        signalDecodeAudioThread();
+//        checkPlayState();
+//        if (buffered) {
+//            return null;
+//        }
+//        audioFrameQueueMutex.lock();
+//        AudioFrame frame = audioFrameQueue.remove(0);
+//        audioFrameQueueMutex.unlock();
+//        return frame.getBuffer();
+//    }
 
     public byte[] fillAudioData(int bufferSize) {
         signalDecodeThread();
@@ -240,11 +258,56 @@ public class AVSynchronizer {
         if (buffered) {
             return new byte[bufferSize];
         }
-        audioFrameQueueMutex.lock();
-        AudioFrame frame = audioFrameQueue.remove(0);
-        audioFrameQueueMutex.unlock();
-        moviePosition = frame.position;
-        return frame.getBuffer();
+        List<byte[]> list = new ArrayList<>();
+        int needBufferSize = bufferSize;
+        while (bufferSize > 0) {
+            if (null == currentAudioFrame) {
+                audioFrameQueueMutex.lock();
+                int count = audioFrameQueue.size();
+//			LOGI("audioFrameQueue->size() is %d", count);
+                if (count > 0) {
+                    AudioFrame frame = audioFrameQueue.remove(0);
+                    if (!audioDecoder.hasSeekReq()) {
+                        //resolve when drag seek bar position changed Frequent
+                        moviePosition = frame.position;
+                    }
+                    currentAudioFrame = new AudioFrame();
+                    currentAudioFramePos = 0;
+                    currentAudioFrame.setBuffer(frame.getBuffer());
+                }
+                audioFrameQueueMutex.unlock();
+            }
+
+            if (null != currentAudioFrame) {
+                //从frame的samples数据放入到buffer中
+                int bytesLeft = currentAudioFrame.getBuffer().length - currentAudioFramePos;
+                int bytesCopy = Math.min(bufferSize, bytesLeft);
+                byte[] outData = new byte[bytesCopy];
+                for (int i = 0; i < outData.length; i++) {
+                    outData[i] = currentAudioFrame.getBuffer()[i + currentAudioFramePos];
+                }
+                bufferSize -= bytesCopy;
+                list.add(outData);
+                if (bytesCopy < bytesLeft) {
+                    currentAudioFramePos += bytesCopy;
+                } else {
+                    currentAudioFrame = null;
+                }
+            } else {
+                Log.i(TAG, "fillAudioData NULL == currentAudioFrame");
+                bufferSize = 0;
+                break;
+            }
+        }
+        byte[] outData = new byte[needBufferSize - bufferSize];
+        int i = 0;
+        for (byte[] bytes : list) {
+            for (int j = 0; j < bytes.length; j++) {
+                outData[i + j] = bytes[j];
+            }
+            i += bytes.length;
+        }
+        return outData;
     }
 
     private boolean checkPlayState() {
@@ -260,6 +323,7 @@ public class AVSynchronizer {
 
         int leftVideoFrames = circleFrameTextureQueue.getValidSize();
         int leftAudioFrames = audioFrameQueue.size();
+        Log.i(TAG, "moviePosition is " + moviePosition + ", leftAudioFrames is " + leftAudioFrames + ", leftVideoFrames is " + leftVideoFrames + ", bufferedDuration is " + (bufferedPosition - moviePosition));
 
         if (leftVideoFrames == 1 || leftAudioFrames == 0) {
             buffered = true;
@@ -268,11 +332,7 @@ public class AVSynchronizer {
 //                showLoadingDialog();
             }
             if (audioDecoder.isAudioEOF()) {
-                //由于OpenSLES 暂停之后有一些数据 还在buffer里面，暂停200ms让他播放完毕
-//                usleep(0.2 * 1000000);
                 isCompleted = true;
-//                onCompletion();
-//			LOGI("onCompletion...");
                 return true;
             }
         } else {
@@ -313,14 +373,14 @@ public class AVSynchronizer {
                 float delta = (float) ((moviePosition - DEFAULT_AUDIO_BUFFER_DURATION_IN_SECS) - texture.position);
                 if (delta < (0 - syncMaxTimeDiff)) {
                     //视频比音频快了好多,我们还是渲染上一帧
-//				LOGI("视频比音频快了好多,我们还是渲染上一帧 moviePosition is %.4f texture->position is %.4f", moviePosition, texture->position);
+                    Log.i(TAG, "视频比音频快了好多,我们还是渲染上一帧 moviePosition is " + moviePosition + " texture->position is " + texture.position);
                     texture = null;
                     break;
                 }
                 circleFrameTextureQueue.pop();
                 if (delta > syncMaxTimeDiff) {
                     //视频比音频慢了好多,我们需要继续从queue拿到合适的帧
-//				LOGI("视频比音频慢了好多,我们需要继续从queue拿到合适的帧 moviePosition is %.4f texture->position is %.4f", moviePosition, texture->position);
+                    Log.i(TAG, "视频比音频慢了好多,我们需要继续从queue拿到合适的帧 moviePosition is " + moviePosition + " texture->position is " + texture.position);
                     continue;
                 } else {
                     break;
@@ -329,6 +389,9 @@ public class AVSynchronizer {
                 texture = null;
                 break;
             }
+        }
+        if (texture != null) {
+            Log.i(TAG, "视频 position: " + texture.position);
         }
         return texture;
     }
@@ -380,10 +443,10 @@ public class AVSynchronizer {
         FrameTexture frameTexture = circleFrameTextureQueue.lockPushCursorFrameTexture();
         if (null != frameTexture) {
             frameTexture.position = position;
-//		LOGI("Render To TextureQueue texture Position is %.3f ", position);
             //cpy input texId to target texId
             passThorughRender.renderToTexture(inputTexId, frameTexture);
             circleFrameTextureQueue.unLockPushCursorFrameTexture();
+            Log.i(TAG, "Render To TextureQueue texture Position is " + position + ", size=" + circleFrameTextureQueue.getValidSize());
 
             frameAvailable();
 
@@ -395,6 +458,8 @@ public class AVSynchronizer {
                     passThorughRender.renderToTexture(inputTexId, firstFrameTexture);
                 }
             }
+        } else {
+            Log.i(TAG, "Render To TextureQueue texture is null");
         }
     }
 
@@ -424,6 +489,7 @@ public class AVSynchronizer {
         videoDecoderLock.lock();
         videoDecoderCondition.awaitUninterruptibly();
         videoDecoderLock.unlock();
+        Log.i(TAG, "decode video");
         isDecodingFrames = true;
         decodeFrames();
         isDecodingFrames = false;
@@ -551,7 +617,7 @@ public class AVSynchronizer {
     }
 
     private boolean canDecodeVideo() {
-        return !pauseDecodeThreadFlag && !isDestroyed && videoDecoder != null && !videoDecoder.isVideoEOF();
+        return !pauseDecodeThreadFlag && !isDestroyed && videoDecoder != null && !videoDecoder.isVideoEOF() && circleFrameTextureQueue.getValidSize() <= 24;
     }
 
     private boolean canDecodeAudio() {

@@ -41,7 +41,7 @@ public class AudioReader {
         }
         AudioFrame frame = new AudioFrame();
         frame.setBuffer(audioDecoder.getAudioBytes());
-        frame.position = (float) (audioDecoder.GetTimestampOfCurrentTextureFrame() * 0.000001 * 0.001);
+        frame.position = (float) (audioDecoder.GetTimestampOfCurrentTextureFrame() * 0.001 * 0.001);
         return frame;
     }
 

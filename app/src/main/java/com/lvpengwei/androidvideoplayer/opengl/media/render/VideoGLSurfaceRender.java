@@ -185,39 +185,43 @@ public class VideoGLSurfaceRender {
             return;
         }
 
-        GLES20.glFramebufferTexture2D(GLES20.GL_FRAMEBUFFER, GLES20.GL_COLOR_ATTACHMENT0, GLES20.GL_TEXTURE_2D, texture.texId, 0);
+        GLES20.glFramebufferTexture2D(GLES20.GL_FRAMEBUFFER, GLES20.GL_COLOR_ATTACHMENT0, GLES20.GL_TEXTURE_2D, inputTexId, 0);
         GLTools.checkEglError("PassThroughRender::renderEffect glFramebufferTexture2D");
         int status = GLES20.glCheckFramebufferStatus(GLES20.GL_FRAMEBUFFER);
         if (status != GLES20.GL_FRAMEBUFFER_COMPLETE) {
             Log.i(TAG, "failed to make complete framebuffer object " + status);
         }
 
-        GLES20.glUseProgram(mGLProgId);
-        float[] _vertices = {-1.0f, 1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f, -1.0f};
-        FloatBuffer verticesBuffer = ByteBuffer.allocateDirect(_vertices.length * 4)
-                .order(ByteOrder.nativeOrder())
-                .asFloatBuffer()
-                .put(_vertices);
-        GLES20.glVertexAttribPointer(mGLVertexCoords, 2, GLES20.GL_FLOAT, false, 0, verticesBuffer);
-        GLES20.glEnableVertexAttribArray(mGLVertexCoords);
-        float[] texCoords = {0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f};
-        FloatBuffer texCorrdsBuffer = ByteBuffer.allocateDirect(texCoords.length * 4)
-                .order(ByteOrder.nativeOrder())
-                .asFloatBuffer()
-                .put(texCoords);
-        GLES20.glVertexAttribPointer(mGLTextureCoords, 2, GLES20.GL_FLOAT, false, 0, texCorrdsBuffer);
-        GLES20.glEnableVertexAttribArray(mGLTextureCoords);
-
-        /* Binding the input texture */
-        GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, inputTexId);
-        GLES20.glUniform1i(mGLUniformTexture, 0);
-        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
-
-        GLES20.glDisableVertexAttribArray(mGLVertexCoords);
-        GLES20.glDisableVertexAttribArray(mGLTextureCoords);
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texture.texId);
+        GLES20.glCopyTexImage2D(GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, 0, 0, 1920, 1080, 0);
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0);
-        GLES20.glFramebufferTexture2D(GLES20.GL_FRAMEBUFFER, GLES20.GL_COLOR_ATTACHMENT0, GLES20.GL_TEXTURE_2D, 0, 0);
+
+//        GLES20.glUseProgram(mGLProgId);
+//        float[] _vertices = {-1.0f, 1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f, -1.0f};
+//        FloatBuffer verticesBuffer = ByteBuffer.allocateDirect(_vertices.length * 4)
+//                .order(ByteOrder.nativeOrder())
+//                .asFloatBuffer()
+//                .put(_vertices);
+//        GLES20.glVertexAttribPointer(mGLVertexCoords, 2, GLES20.GL_FLOAT, false, 0, verticesBuffer);
+//        GLES20.glEnableVertexAttribArray(mGLVertexCoords);
+//        float[] texCoords = {0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f};
+//        FloatBuffer texCorrdsBuffer = ByteBuffer.allocateDirect(texCoords.length * 4)
+//                .order(ByteOrder.nativeOrder())
+//                .asFloatBuffer()
+//                .put(texCoords);
+//        GLES20.glVertexAttribPointer(mGLTextureCoords, 2, GLES20.GL_FLOAT, false, 0, texCorrdsBuffer);
+//        GLES20.glEnableVertexAttribArray(mGLTextureCoords);
+//
+//        /* Binding the input texture */
+//        GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+//        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, inputTexId);
+//        GLES20.glUniform1i(mGLUniformTexture, 0);
+//        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
+//
+//        GLES20.glDisableVertexAttribArray(mGLVertexCoords);
+//        GLES20.glDisableVertexAttribArray(mGLTextureCoords);
+//        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0);
+//        GLES20.glFramebufferTexture2D(GLES20.GL_FRAMEBUFFER, GLES20.GL_COLOR_ATTACHMENT0, GLES20.GL_TEXTURE_2D, 0, 0);
     }
 
 }

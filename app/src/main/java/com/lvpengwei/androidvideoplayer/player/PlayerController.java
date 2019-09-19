@@ -232,11 +232,15 @@ public class PlayerController {
         audioOutput = new AudioOutput();
         audioOutput.init(channels, sampleRate, new AudioOutput.AudioOutputCallback() {
             @Override
-            public byte[] produceData(int bufferSize, Object ctx) {
-                signalOutputFrameAvailable();
-                return synchronizer.fillAudioData(bufferSize);
+            public byte[] produceData(int bufferSize) {
+                if (isPlaying && synchronizer != null && !synchronizer.isDestroyed && !synchronizer.isPlayCompleted()) {
+                    signalOutputFrameAvailable();
+                    return synchronizer.fillAudioData(bufferSize);
+                } else {
+                    return new byte[bufferSize];
+                }
             }
-        }, this);
+        });
         return true;
     }
 

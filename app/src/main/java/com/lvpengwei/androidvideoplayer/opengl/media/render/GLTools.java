@@ -1,6 +1,5 @@
 package com.lvpengwei.androidvideoplayer.opengl.media.render;
 
-import android.opengl.EGL14;
 import android.opengl.GLES20;
 import android.util.Log;
 
@@ -10,7 +9,7 @@ public class GLTools {
     public static boolean checkEglError(String msg) {
         int error;
         String errorContent = "";
-        while ((error = EGL14.eglGetError()) != EGL14.EGL_SUCCESS) {
+        while ((error = GLES20.glGetError()) != GLES20.GL_NO_ERROR) {
             errorContent += (msg + ": EGL error: 0x" + Integer.toHexString(error));
             Log.e(TAG, errorContent);
             return true;

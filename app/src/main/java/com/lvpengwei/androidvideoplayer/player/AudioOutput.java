@@ -3,14 +3,19 @@ package com.lvpengwei.androidvideoplayer.player;
 import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioTrack;
-import android.util.Log;
+import android.os.Handler;
+import android.os.HandlerThread;
+import android.os.Message;
 
 public class AudioOutput {
     private static String TAG = "AudioOutput";
-    public static double DEFAULT_AUDIO_BUFFER_DURATION_IN_SECS = 0.03;
+
+    private static final int WRITE_DATA = 1;
+
+    private Handler handler;
 
     public interface AudioOutputCallback {
-        byte[] produceData(int bufferSize, Object ctx);
+        byte[] produceData(int bufferSize);
     }
 
     enum PlayingState {
@@ -21,52 +26,54 @@ public class AudioOutput {
 
     public PlayingState playingState = PlayingState.init;
 
+    private int accompanySampleRate;
+    private int channels;
     private AudioOutputCallback produceDataCallback;
     private AudioTrack mAudioTrack;
-    private Object ctx;
 
     private int bufferSize;
+    private long delayTime;
+    private HandlerThread thread;
 
-    public void init(int channels, int accompanySampleRate, AudioOutputCallback callback, Object ctx) {
+    public void init(final int channels, final int accompanySampleRate, AudioOutputCallback callback) {
         this.produceDataCallback = callback;
-        this.ctx = ctx;
-        this.bufferSize = (int) (channels * accompanySampleRate * 2 * DEFAULT_AUDIO_BUFFER_DURATION_IN_SECS);
-        int outputBufferSize = AudioTrack.getMinBufferSize(accompanySampleRate, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT);
-        mAudioTrack = new AudioTrack(AudioManager.STREAM_MUSIC, accompanySampleRate, channels, AudioFormat.ENCODING_PCM_16BIT, outputBufferSize, AudioTrack.MODE_STREAM);
-//        mAudioTrack.setPositionNotificationPeriod(bufferSize / 2);
-        mAudioTrack.setPositionNotificationPeriod(200);
-        mAudioTrack.setPlaybackPositionUpdateListener(new AudioTrack.OnPlaybackPositionUpdateListener() {
-            @Override
-            public void onMarkerReached(AudioTrack track) {
-                Log.i(TAG, "");
-            }
-
-            @Override
-            public void onPeriodicNotification(AudioTrack track) {
-                producePacket();
-            }
-        });
+        this.accompanySampleRate = accompanySampleRate;
+        this.channels = channels;
+        bufferSize = AudioTrack.getMinBufferSize(accompanySampleRate, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT);
+        delayTime = (long) (bufferSize * 1000.0 / (accompanySampleRate * 2 * channels));
+        mAudioTrack = new AudioTrack(AudioManager.STREAM_MUSIC, accompanySampleRate, channels, AudioFormat.ENCODING_PCM_16BIT, bufferSize, AudioTrack.MODE_STREAM);
+        setupHandler();
     }
 
     private void producePacket() {
         if (playingState != PlayingState.playing) return;
-        byte[] buffer = produceDataCallback.produceData(bufferSize, ctx);
-        if (buffer == null || buffer.length <= 0) return;
-        if (playingState != PlayingState.playing) return;
+        byte[] buffer = produceDataCallback.produceData(bufferSize);
+        if (buffer == null || buffer.length <= 0) {
+            sendMessage(WRITE_DATA, delayTime);
+            return;
+        }
         mAudioTrack.write(buffer, 0, buffer.length);
+        sendMessage(WRITE_DATA, delayTime);
+    }
+
+    private void sendMessage(int msgId, long delayMillis) {
+        if (handler == null) return;
+        Message message = handler.obtainMessage(msgId);
+        handler.sendMessageDelayed(message, delayMillis);
     }
 
     public void start() {
         if (mAudioTrack == null) return;
         playingState = PlayingState.playing;
-        producePacket();
         mAudioTrack.play();
+        sendMessage(WRITE_DATA, 0);
     }
 
     public void play() {
         if (mAudioTrack == null) return;
         mAudioTrack.play();
         playingState = PlayingState.playing;
+        sendMessage(WRITE_DATA, 0);
     }
 
     public void pause() {
@@ -90,4 +97,20 @@ public class AudioOutput {
         mAudioTrack.release();
     }
 
+    private void setupHandler() {
+        thread = new HandlerThread("AudioOutput");
+        thread.start();
+        handler = new Handler(thread.getLooper()) {
+            @Override
+            public void handleMessage(Message msg) {
+                switch (msg.what) {
+                    case WRITE_DATA:
+                        producePacket();
+                        break;
+                    default:
+                        break;
+                }
+            }
+        };
+    }
 }

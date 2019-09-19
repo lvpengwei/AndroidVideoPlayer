@@ -162,7 +162,7 @@ public class MediaCodecAudioDecoder {
 
     public int GetNextVideoFrameForPlayback() {
         if (!IsValid())
-            return ERROR_EOF;
+            return ERROR_FAIL;
 
         if (!m_firstPlaybackTexFrameUnconsumed) {
             final int ret = DecodeToFrame(Long.MIN_VALUE, 0);

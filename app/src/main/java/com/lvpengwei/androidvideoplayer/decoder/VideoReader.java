@@ -71,6 +71,14 @@ public class VideoReader {
         videoDecoder.CloseFile();
     }
 
+    public int getVideoFrameHeight() {
+        return height;
+    }
+
+    public int getVideoFrameWidth() {
+        return width;
+    }
+
     public FrameTexture copyNextSample() {
         if (!isMediaCodecInit) {
             initializeMediaCodec();
@@ -99,7 +107,7 @@ public class VideoReader {
     }
 
     private float updateTexImage(TextureFrame textureFrame) {
-        return (float) (videoDecoder.updateTexImage() * 0.000001 * 0.001);
+        return (float) (videoDecoder.updateTexImage() * 0.001 * 0.001);
     }
 
     public void startUploader(TextureFrameUploader.UploaderCallback uploaderCallback) {
