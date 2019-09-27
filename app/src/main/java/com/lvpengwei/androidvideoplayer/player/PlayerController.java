@@ -234,10 +234,17 @@ public class PlayerController {
             @Override
             public byte[] produceData(int bufferSize) {
                 if (isPlaying && synchronizer != null && !synchronizer.isDestroyed && !synchronizer.isPlayCompleted()) {
-                    signalOutputFrameAvailable();
                     return synchronizer.fillAudioData(bufferSize);
                 } else {
-                    return new byte[bufferSize];
+                    return null;
+                }
+            }
+
+            @Override
+            public void timeChanged(long ms) {
+                synchronizer.setMoviePosition(ms * 0.001);
+                if (ms % 30 == 0) {
+                    signalOutputFrameAvailable();
                 }
             }
         });

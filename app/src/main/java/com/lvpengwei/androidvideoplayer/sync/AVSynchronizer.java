@@ -23,7 +23,7 @@ public class AVSynchronizer {
     private static String TAG = "AVSynchronizer";
     private static float LOCAL_MIN_BUFFERED_DURATION = 0.5f;
     private static float LOCAL_MAX_BUFFERED_DURATION = 0.8f;
-    private static float LOCAL_AV_SYNC_MAX_TIME_DIFF = 0.08f;
+    private static float LOCAL_AV_SYNC_MAX_TIME_DIFF = 0.1f;
     private static float FIRST_BUFFER_DURATION = 0.5f;
     private static float DEFAULT_AUDIO_BUFFER_DURATION_IN_SECS = 0.03f;
     private static int SEEK_REQUEST_LIST_MAX_SIZE = 2;
@@ -256,7 +256,7 @@ public class AVSynchronizer {
         signalDecodeAudioThread();
         checkPlayState();
         if (buffered) {
-            return new byte[bufferSize];
+            return null;
         }
         List<byte[]> list = new ArrayList<>();
         int needBufferSize = bufferSize;
@@ -269,7 +269,7 @@ public class AVSynchronizer {
                     AudioFrame frame = audioFrameQueue.remove(0);
                     if (!audioDecoder.hasSeekReq()) {
                         //resolve when drag seek bar position changed Frequent
-                        moviePosition = frame.position;
+//                        moviePosition = frame.position;
                     }
                     currentAudioFrame = new AudioFrame();
                     currentAudioFramePos = 0;
@@ -391,7 +391,7 @@ public class AVSynchronizer {
             }
         }
         if (texture != null) {
-            Log.i(TAG, "视频 position: " + texture.position);
+            Log.i(TAG, "moviePosition: " + moviePosition + ", 视频 position: " + texture.position);
         }
         return texture;
     }

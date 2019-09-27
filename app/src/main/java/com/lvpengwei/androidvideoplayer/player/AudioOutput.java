@@ -6,16 +6,19 @@ import android.media.AudioTrack;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Message;
+import android.util.Log;
 
 public class AudioOutput {
     private static String TAG = "AudioOutput";
 
     private static final int WRITE_DATA = 1;
+    private static final int INTERVAL_TIME = 2;
 
     private Handler handler;
 
     public interface AudioOutputCallback {
         byte[] produceData(int bufferSize);
+        void timeChanged(long ms);
     }
 
     enum PlayingState {
@@ -34,12 +37,16 @@ public class AudioOutput {
     private int bufferSize;
     private long delayTime;
     private HandlerThread thread;
+    private HandlerThread timeThread;
+
+    private long intervalTime = 15;
 
     public void init(final int channels, final int accompanySampleRate, AudioOutputCallback callback) {
         this.produceDataCallback = callback;
         this.accompanySampleRate = accompanySampleRate;
         this.channels = channels;
-        bufferSize = AudioTrack.getMinBufferSize(accompanySampleRate, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT);
+//        bufferSize = AudioTrack.getMinBufferSize(accompanySampleRate, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT);
+        bufferSize = getDefaultBufferSize();
         delayTime = (long) (bufferSize * 1000.0 / (accompanySampleRate * 2 * channels));
         mAudioTrack = new AudioTrack(AudioManager.STREAM_MUSIC, accompanySampleRate, channels, AudioFormat.ENCODING_PCM_16BIT, bufferSize, AudioTrack.MODE_STREAM);
         setupHandler();
@@ -67,13 +74,13 @@ public class AudioOutput {
         playingState = PlayingState.playing;
         mAudioTrack.play();
         sendMessage(WRITE_DATA, 0);
+        sendTimeDelay(0);
     }
 
     public void play() {
         if (mAudioTrack == null) return;
         mAudioTrack.play();
         playingState = PlayingState.playing;
-        sendMessage(WRITE_DATA, 0);
     }
 
     public void pause() {
@@ -97,6 +104,17 @@ public class AudioOutput {
         mAudioTrack.release();
     }
 
+    private void sendTimeDelay(long time) {
+        Message message = timeHandler.obtainMessage(INTERVAL_TIME);
+        timeHandler.sendMessageDelayed(message, time);
+    }
+    private void timerFired() {
+        long head = 0xFFFFFFFFL & mAudioTrack.getPlaybackHeadPosition();
+        produceDataCallback.timeChanged((long) (head * 1000.0 / (accompanySampleRate * 2)));
+
+        sendTimeDelay(intervalTime);
+    }
+    private Handler timeHandler;
     private void setupHandler() {
         thread = new HandlerThread("AudioOutput");
         thread.start();
@@ -112,5 +130,32 @@ public class AudioOutput {
                 }
             }
         };
+        timeThread = new HandlerThread("TimeThread");
+        timeThread.start();
+        timeHandler = new Handler(timeThread.getLooper()) {
+            @Override
+            public void handleMessage(Message msg) {
+                timerFired();
+            }
+        };
+    }
+
+    private static final int BUFFER_MULTIPLICATION_FACTOR = 4;
+    private static final long MIN_BUFFER_DURATION_US = 250000;
+    private static final long MAX_BUFFER_DURATION_US = 750000;
+    private static final long MICROS_PER_SECOND = 1000000L;
+    private int getDefaultBufferSize() {
+        int minBufferSize = AudioTrack.getMinBufferSize(accompanySampleRate, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT);
+        int multipliedBufferSize = minBufferSize * BUFFER_MULTIPLICATION_FACTOR;
+        int outputPcmFrameSize = channels * 2;
+        int minAppBufferSize = (int) durationUsToFrames(MIN_BUFFER_DURATION_US) * outputPcmFrameSize;
+        int maxAppBufferSize = (int) Math.max(minBufferSize, durationUsToFrames(MAX_BUFFER_DURATION_US) * outputPcmFrameSize);
+        return constrainValue(multipliedBufferSize, minAppBufferSize, maxAppBufferSize);
+    }
+    private long durationUsToFrames(long durationUs) {
+        return (durationUs * accompanySampleRate) / MICROS_PER_SECOND;
+    }
+    private static int constrainValue(int value, int min, int max) {
+        return Math.max(min, Math.min(value, max));
     }
 }
